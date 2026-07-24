@@ -1,0 +1,35 @@
+description: RAG Agent Benchmark (Cortex Assist demo)
+
+# Custom provider: performs Login -> Create Chat -> Ask Agent -> Parse Response
+# for every test case (see scripts/provider.js). To benchmark a different
+# agent, change `config.agent` below to any key from
+# config/environments/<env>.agents.json (HR, LEGAL, FINANCE, IT, SALES,
+# GENERAL) - nothing else needs to change.
+providers:
+  - id: file://scripts/provider.js
+    label: Cortex Assist Agent (HR)
+    config:
+      agent: HR
+
+# The provider receives the fully-rendered prompt string as `prompt` and
+# sends it verbatim as the chat question, so a plain passthrough is used.
+prompts:
+  - "{{question}}"
+
+# Benchmark questions + expected answers are read from the dataset (default:
+# datasets/Acme_Benchmark_Dataset.xlsx) and turned into Promptfoo test cases
+# (with an llm-rubric assertion comparing actual vs expected) by
+# scripts/loadTests.js.
+tests: file://scripts/loadTests.js
+
+# Applies to every test's llm-rubric assertion: grade by intent/semantic
+# match against the reference answer, not strict text similarity. See
+# scripts/gradingRubricPrompt.json for the full grading instructions.
+defaultTest:
+  options:
+    rubricPrompt: file://scripts/gradingRubricPrompt.json
+
+# Fallback used only if promptfoo is invoked directly without -o (e.g. bare
+# `npx promptfoo eval`). The normal `npm run eval` path (scripts/runEval.js)
+# always overrides this with an explicit, timestamped reports/<runId>/ folder.
+outputPath: reports/_adhoc/latest_eval.json
