@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "mock-server": "node mock-server/server.js",
+    "test": "npm run test:login && npm run test:agent",
     "test:login": "node Tests/testLogin.js",
     "test:agent": "node Tests/testAgent.js",
     "eval": "node scripts/runEval.js",
@@ -12,18 +13,29 @@
     "export": "node scripts/exportResults.js",
     "report": "promptfoo view"
   },
-  "keywords": ["promptfoo", "rag", "llm-eval", "benchmark", "ai-agent"],
-  "author": "",
+  "keywords": ["promptfoo", "rag", "llm-eval", "benchmark", "ai-agent", "llm-testing", "multi-agent"],
+  "author": "krishna",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohank1234/Promtfoo_Playwright.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mohank1234/Promtfoo_Playwright/issues"
+  },
+  "homepage": "https://github.com/mohank1234/Promtfoo_Playwright#readme",
+  "engines": {
+    "node": ">=18"
+  },
   "type": "commonjs",
   "dependencies": {
-    "axios": "^1.18.1",
+    "axios": "^1.19.0",
     "csv-parse": "^7.0.1",
     "csv-stringify": "^6.8.1",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1",
-    "promptfoo": "^0.121.19",
+    "promptfoo": "^0.121.20",
     "uuid": "^14.0.1",
     "xlsx": "^0.18.5"
   }

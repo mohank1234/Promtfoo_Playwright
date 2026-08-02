@@ -1,5 +1,9 @@
 # RAG Agent Benchmark Framework
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](package.json)
+[![Built with Promptfoo](https://img.shields.io/badge/built%20with-Promptfoo-blueviolet.svg)](https://www.promptfoo.dev/)
+
 A [Promptfoo](https://www.promptfoo.dev/)-based benchmark framework for multi-agent
 RAG chat APIs: it logs in, creates a chat, asks a specialized agent a benchmark
 question, parses a streamed response, grades the answer semantically against
@@ -10,6 +14,14 @@ This repo is **fully self-contained** — it ships a small mock API
 "Acme Corp") and a 120-question sample dataset, so the whole pipeline runs
 end-to-end on your machine with zero real credentials and zero external
 services beyond an LLM grading key.
+
+**Highlights**
+
+- **Multi-agent routing** — one dataset, six specialized agents (HR, Legal, Finance, IT, Sales, General), resolved per-row, per-run, or per-environment
+- **Real streaming, not text()** — consumes chunked NDJSON incrementally via `response.body.getReader()`, matching how real chat APIs actually stream
+- **Semantic grading, not string match** — an LLM rubric grades intent/facts against a reference answer, with 0–100 partial credit
+- **Environment-driven config** — switch `development` → `staging` → `production` with one env var, zero file edits
+- **Round-trips to spreadsheet** — results are exported back into the original `.csv`/`.xlsx` shape, ready to diff or share with non-engineers
 
 ```bash
 npm install
