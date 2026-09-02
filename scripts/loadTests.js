@@ -34,6 +34,15 @@ const samplePerSheet = process.env.SAMPLE_PER_SHEET ? parseInt(process.env.SAMPL
 const tests = [];
 let rowCounter = 0;
 
+// exportResults.js matches each eval result back to its source row by
+// (sheet, question text) - two rows in the same sheet with identical
+// question text collide on that key, and BOTH rows silently get the same
+// eval result written back on export (not just one going unmatched). Warn
+// up front, before any (costly) eval calls happen, so it's caught before
+// the run instead of discovered as corrupted results afterward.
+const seenKeys = new Set();
+const duplicateKeys = new Set();
+
 for (const sheet of dataset.sheets) {
   let sheetRowCount = 0;
   for (const row of sheet.rows) {
@@ -42,6 +51,10 @@ for (const sheet of dataset.sheets) {
     if (samplePerSheet && sheetRowCount >= samplePerSheet) continue;
     sheetRowCount++;
     rowCounter++;
+
+    const dedupeKey = `${sheet.name || ""}::${extracted.question}`;
+    if (seenKeys.has(dedupeKey)) duplicateKeys.add(dedupeKey);
+    seenKeys.add(dedupeKey);
 
     const vars = { question: extracted.question };
 
@@ -80,6 +93,16 @@ for (const sheet of dataset.sheets) {
 
     tests.push(test);
   }
+}
+
+if (duplicateKeys.size > 0) {
+  console.warn(
+    `WARNING: ${duplicateKeys.size} duplicate question(s) found within the same sheet in ` +
+      `${path.basename(datasetPath)}. Each will still run, but "npm run export" matches results ` +
+      `back to rows by (sheet, question text), so duplicates will collide and be written with the ` +
+      `same result. Make questions unique within a sheet to get correct per-row export:\n` +
+      [...duplicateKeys].map((k) => `  - ${k.split("::")[1]}`).join("\n")
+  );
 }
 
 module.exports = tests;

@@ -22,6 +22,7 @@ services beyond an LLM grading key.
 - **Semantic grading, not string match** — an LLM rubric grades intent/facts against a reference answer, with 0–100 partial credit
 - **Environment-driven config** — switch `development` → `staging` → `production` with one env var, zero file edits
 - **Round-trips to spreadsheet** — results are exported back into the original `.csv`/`.xlsx` shape, ready to diff or share with non-engineers
+- **Resilient by default** — every request has a timeout, transient failures (timeouts, connection errors, 5xx/429) get a bounded retry, and an expired token triggers one automatic re-login + retry — a network blip doesn't get scored as a wrong answer
 
 ```bash
 npm install
@@ -204,6 +205,9 @@ flowchart TD
     SCRIPTS --> PARSER[parser.js]
     SCRIPTS --> AGENTMAP[agentMap.js]
     SCRIPTS --> PROVIDER[provider.js]
+    SCRIPTS --> HTTPERROR["httpError.js - status-carrying error type"]
+    SCRIPTS --> FETCHTIMEOUT["fetchWithTimeout.js - abort on hang"]
+    SCRIPTS --> RETRY["retry.js - bounded retry on transient failures"]
     SCRIPTS --> LOADTESTS[loadTests.js]
     SCRIPTS --> DATASETIO[datasetIO.js]
     SCRIPTS --> RUBRIC[gradingRubricPrompt.json]
@@ -365,6 +369,33 @@ Re-export the most recent run on its own with `npm run export`.
    `scripts/createChat.js` / `scripts/askAgent.js` / `scripts/parser.js`
    accordingly — everything downstream (grading, reporting, export) is
    generic and doesn't need to change.
+5. Tune `REQUEST_TIMEOUT_MS` (login/create-chat) and `STREAM_TIMEOUT_MS`
+   (the full conversation stream) in `config/environments/<env>.env` if the
+   real API is slower than the mock server's defaults (15s / 60s). A 401
+   response from create-chat or the conversation stream is treated as an
+   expired/stale token: `scripts/provider.js` logs in again once and retries
+   automatically, so real short-lived tokens don't fail a whole run.
+
+## Reliability behavior
+
+- **Timeouts** — every HTTP call (`login.js`, `createChat.js`, `askAgent.js`)
+  aborts after `REQUEST_TIMEOUT_MS`/`STREAM_TIMEOUT_MS` instead of hanging
+  the eval run forever on an unresponsive server.
+- **Retries** — `scripts/retry.js` gives connection errors, request
+  timeouts, and 5xx/429 responses a bounded retry (2 attempts, exponential
+  backoff) before the row is scored as an error. A 4xx that isn't 401/429,
+  or an `{error:true}` event inside a *successful* stream, is never
+  retried — those are real results the benchmark is meant to capture and
+  grade (see the mock server's deliberate correct/degraded/off-target mix),
+  not glitches to paper over.
+- **Token refresh** — a 401 from create-chat or the conversation stream
+  triggers exactly one automatic re-login + retry of that test case, via
+  `scripts/provider.js`. The mock server's tokens never expire, so this
+  path only activates against a real backend.
+- **`npm test` fails loudly** — `Tests/testLogin.js` and `Tests/testAgent.js`
+  now set a non-zero exit code on any thrown error or returned
+  `result.error`, so a broken login/agent path fails CI instead of printing
+  an error and exiting 0.
 
 ## Troubleshooting
 
@@ -373,3 +404,4 @@ Re-export the most recent run on its own with `npm run export`.
 - **`Unknown agent "X"`** — `AGENT`, `config.agent`, or a dataset's `Agent` column doesn't match a key in the resolved environment's `agents.json`.
 - **Grading feels off** — tune `scripts/gradingRubricPrompt.json`; it's the single place grading behavior is controlled.
 - **All the mock server's answers look the same** — it's randomized per call; run again or check `Math.random()` isn't being seeded elsewhere.
+- **A run is slower than expected / times out** — check `REQUEST_TIMEOUT_MS` and `STREAM_TIMEOUT_MS` in the active environment's `.env`; transient failures also retry with backoff (see "Reliability behavior" above), which adds latency by design.

@@ -27,8 +27,10 @@ const agents = require("../scripts/agentMap");
         console.log("Metrics:", result.metrics);
         if (result.error) {
             console.log("Error:", result.error);
+            process.exitCode = 1;
         }
     } catch (err) {
         console.error(err.response?.data || err);
+        process.exitCode = 1;
     }
 })();

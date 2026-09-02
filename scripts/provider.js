@@ -3,11 +3,16 @@ const login = require("./login");
 const createChat = require("./createChat");
 const askAgent = require("./askAgent");
 const agents = require("./agentMap");
+const HttpError = require("./httpError");
+const { withRetry } = require("./retry");
 
 // Login once per eval run and reuse the token across all test cases.
+// forceRefresh discards the cached token and logs in again - used when a
+// downstream call comes back 401 (token expired/revoked mid-run against a
+// real API; the mock server's tokens never expire).
 let tokenPromise = null;
-function getToken() {
-  if (!tokenPromise) {
+function getToken(forceRefresh) {
+  if (forceRefresh || !tokenPromise) {
     tokenPromise = login().catch((err) => {
       tokenPromise = null;
       throw err;
@@ -56,9 +61,27 @@ class RagAgentProvider {
     try {
       ({ agentKey, agentId } = resolveAgent(context, this.config));
 
-      const token = await getToken();
-      chatId = await createChat(token, agentId);
-      const result = await askAgent(token, prompt, agentId, chatId);
+      const runOnce = async (forceTokenRefresh) => {
+        const token = await getToken(forceTokenRefresh);
+        chatId = await createChat(token, agentId);
+        return askAgent(token, prompt, agentId, chatId);
+      };
+
+      // Transient failures (timeouts, connection errors, 5xx/429) get a
+      // bounded retry - a single flaky network blip shouldn't score a row
+      // as a wrong answer. A 401 is handled separately below: it means the
+      // cached token itself is stale, so retrying with the same token would
+      // just fail again - refresh it once and retry the whole sequence.
+      let result;
+      try {
+        result = await withRetry(() => runOnce(false), { retries: 2 });
+      } catch (err) {
+        if (err instanceof HttpError && err.status === 401) {
+          result = await withRetry(() => runOnce(true), { retries: 2 });
+        } else {
+          throw err;
+        }
+      }
 
       const metadata = {
         environment: ENV,

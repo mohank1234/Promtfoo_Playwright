@@ -1,5 +1,9 @@
 require("../config/env");
 const { randomUUID } = require("crypto");
+const HttpError = require("./httpError");
+const fetchWithTimeout = require("./fetchWithTimeout");
+
+const TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS) || 15000;
 
 // IMPORTANT: /api/chats/create only accepts multipart/form-data.
 // This is a deliberate, documented lesson baked into this project (see the
@@ -19,25 +23,29 @@ async function createChat(token, agentId) {
   form.append("deeperResearch", "false");
   form.append("webSearch", "false");
 
-  const response = await fetch(process.env.API_BASE_URL + "/api/chats/create", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
+  const response = await fetchWithTimeout(
+    process.env.API_BASE_URL + "/api/chats/create",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      body: form,
     },
-    body: form,
-  });
+    TIMEOUT_MS
+  );
 
   const text = await response.text();
   let data;
   try {
     data = JSON.parse(text);
   } catch (_) {
-    throw new Error(`Create chat returned non-JSON response (status ${response.status}): ${text.slice(0, 300)}`);
+    throw new HttpError(`Create chat returned non-JSON response (status ${response.status}): ${text.slice(0, 300)}`, response.status);
   }
 
   if (!response.ok || !data.id) {
-    throw new Error(`Create chat failed (status ${response.status}): ${text.slice(0, 300)}`);
+    throw new HttpError(`Create chat failed (status ${response.status}): ${text.slice(0, 300)}`, response.status);
   }
 
   return data.id;
