@@ -47,6 +47,7 @@ flowchart TB
         ASK[askAgent.js]
         PARSER[parser.js]
         AGENTMAP[agentMap.js]
+        RELIABILITY["httpError.js + fetchWithTimeout.js + retry.js<br/>(timeouts, bounded retry, 401 refresh)"]
     end
 
     subgraph Bench["Benchmark layer"]
@@ -330,7 +331,7 @@ of the file to add more questions/agents).
 
 | Column | Required | Meaning |
 |---|---|---|
-| `Question` | **yes** | Sent to the agent; also the join key `exportResults.js` uses, so keep it unique within a dataset |
+| `Question` | **yes** | Sent to the agent; also the join key `exportResults.js` uses (paired with the sheet name), so keep it unique within each sheet - `loadTests.js` warns at load time if it isn't |
 | `Expected Answer` | recommended | Reference answer graded against (see §5). Omit to run ungraded. |
 | `Agent` | no | Per-row agent override (§9) - `HR Agent`, `Legal Agent`, etc. are normalized automatically |
 | `S.No`, `Query Category`, `Scenario Type`, `Source Document` | no | Metadata/labeling only |
@@ -396,6 +397,16 @@ Re-export the most recent run on its own with `npm run export`.
   now set a non-zero exit code on any thrown error or returned
   `result.error`, so a broken login/agent path fails CI instead of printing
   an error and exiting 0.
+- **Retries and refreshes are logged** — `provider.js` prints a `[retry]`
+  line (which question, which attempt, why) whenever a transient failure is
+  retried, and an `[auth]` line whenever a 401 triggers a token refresh, so
+  a slow-looking run shows *why* instead of just taking longer.
+- **Misconfigured environments fail at startup, not mid-run** —
+  `config/env.js` checks that `EMAIL`/`PASSWORD`/`LOGIN_KEY`/`LOGIN_URL`/
+  `API_BASE_URL`/`CONVERSATION_STREAM_PATH`/`MODEL` are set and not left as
+  the `staging.env`/`production.env` templates' literal `TODO` placeholder,
+  so pointing at an unedited template fails immediately with a clear
+  message instead of a confusing network error partway through a run.
 
 ## Troubleshooting
 

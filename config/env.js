@@ -36,6 +36,22 @@ if (!fs.existsSync(envFilePath)) {
 }
 dotenv.config({ path: envFilePath, override: true, quiet: true });
 
+// staging.env/production.env ship as templates with literal "TODO" values
+// (see README's "Pointing this at a real product") - catch an unedited
+// template here, at startup, instead of letting it surface later as a
+// confusing DNS/auth failure deep in login.js/createChat.js.
+const REQUIRED_VARS = ["EMAIL", "PASSWORD", "LOGIN_KEY", "LOGIN_URL", "API_BASE_URL", "CONVERSATION_STREAM_PATH", "MODEL"];
+const unset = REQUIRED_VARS.filter((key) => {
+  const value = (process.env[key] || "").trim();
+  return !value || value.toUpperCase() === "TODO";
+});
+if (unset.length > 0) {
+  throw new Error(
+    `config/environments/${ENV}.env is missing (or still has placeholder "TODO" values for): ${unset.join(", ")}. ` +
+      `Fill in real values before running against "${ENV}" - see README's "Pointing this at a real product".`
+  );
+}
+
 function loadAgentMap() {
   const agentsFilePath = path.join(__dirname, "environments", `${ENV}.agents.json`);
   if (!fs.existsSync(agentsFilePath)) {

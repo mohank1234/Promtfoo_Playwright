@@ -72,12 +72,16 @@ class RagAgentProvider {
       // as a wrong answer. A 401 is handled separately below: it means the
       // cached token itself is stale, so retrying with the same token would
       // just fail again - refresh it once and retry the whole sequence.
+      const onRetry = (err, attempt) =>
+        console.warn(`[retry] ${agentKey} "${String(prompt).slice(0, 60)}" - attempt ${attempt}: ${err.message}`);
+
       let result;
       try {
-        result = await withRetry(() => runOnce(false), { retries: 2 });
+        result = await withRetry(() => runOnce(false), { retries: 2, onRetry });
       } catch (err) {
         if (err instanceof HttpError && err.status === 401) {
-          result = await withRetry(() => runOnce(true), { retries: 2 });
+          console.warn(`[auth] ${agentKey} got 401 - refreshing token and retrying`);
+          result = await withRetry(() => runOnce(true), { retries: 2, onRetry });
         } else {
           throw err;
         }
