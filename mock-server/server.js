@@ -87,12 +87,20 @@ function bestMatch(agentKey, query) {
 // (drops a clause), sometimes a hallucinated wrong answer, sometimes a
 // genuine "not found" - so a benchmark run has a believable pass rate
 // instead of a suspicious 100%.
+//
+// `category` and `roll` are returned alongside the text so the caller can
+// derive the reported metrics (accuracy, non_compliant) from the *same*
+// correctness outcome instead of rolling an independent random number for
+// them - otherwise a "wrong" answer could be reported with a high accuracy
+// score and vice versa.
 function generateAnswer(agentKey, query) {
   const match = bestMatch(agentKey, query);
   if (!match) {
     return {
       text: "I'm sorry, I couldn't find information about that in the available knowledge base. Could you rephrase the question or provide more detail?",
       references: [],
+      category: "not_found",
+      roll: Math.random(),
     };
   }
 
@@ -106,13 +114,13 @@ function generateAnswer(agentKey, query) {
 
   if (roll < 0.72) {
     // Correct
-    return { text: `${match.answer} [1]`, references: [reference] };
+    return { text: `${match.answer} [1]`, references: [reference], category: "correct", roll };
   }
 
   if (roll < 0.86) {
     // Degraded: truncate to first clause/sentence, dropping detail
     const truncated = match.answer.split(/(?<=[.;])\s/)[0];
-    return { text: `${truncated} [1]`, references: [reference] };
+    return { text: `${truncated} [1]`, references: [reference], category: "degraded", roll };
   }
 
   // Hallucinated / off-target: answer a nearby question instead, or hedge
@@ -123,11 +131,33 @@ function generateAnswer(agentKey, query) {
       ? `${other.answer} [1]`
       : "I have some general information on this topic, but I'm not fully certain of the exact policy details - please confirm with your manager or the relevant department.",
     references: [reference],
+    category: "hallucinated",
+    roll,
   };
 }
 
-function accuracyFor(roll) {
-  return Math.round(roll * 100);
+// Derives a reported accuracy score from the same correctness category/roll
+// that decided the answer text, so the two stay correlated: high for
+// "correct", medium for "degraded", low for "hallucinated"/"not_found".
+// The category's roll (already consumed above) also picks where in that
+// category's range the score lands, so the whole metric comes from a single
+// random draw rather than a second, independent one.
+function accuracyFor(category, roll) {
+  switch (category) {
+    case "correct":
+      // roll is in [0, 0.72) here -> map to [90, 100]
+      return Math.round(90 + (roll / 0.72) * 10);
+    case "degraded":
+      // roll is in [0.72, 0.86) here -> map to [60, 85]
+      return Math.round(60 + ((roll - 0.72) / 0.14) * 25);
+    case "hallucinated":
+      // roll is in [0.86, 1) here -> map to [10, 50]
+      return Math.round(10 + ((roll - 0.86) / 0.14) * 40);
+    case "not_found":
+    default:
+      // No match at all - always a low score.
+      return Math.round(roll * 20);
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -206,14 +236,17 @@ app.post("/api/conversation/stream", express.json(), async (req, res) => {
     return res.end();
   }
 
-  const roll = Math.random();
-  const { text, references } = generateAnswer(agentKey, query || "");
+  const { text, references, category, roll } = generateAnswer(agentKey, query || "");
 
   write({ type: "references", model_name: "cortex/assist-1", content: references });
   write({
     type: "metrics",
     model_name: "cortex/assist-1",
-    content: { non_compliant: roll > 0.85, privacy_policy_violation: false, accuracy: accuracyFor(roll) },
+    content: {
+      non_compliant: category === "hallucinated",
+      privacy_policy_violation: false,
+      accuracy: accuracyFor(category, roll),
+    },
   });
   write({ type: "answer", model_name: "cortex/assist-1", content: text });
   res.end();
