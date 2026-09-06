@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax-check main scripts
+        run: |
+          node --check mock-server/server.js
+          node --check Tests/testLogin.js
+          node --check Tests/testAgent.js
+          node --check scripts/runEval.js
+
+      # This repo is self-contained (mock server, no real credentials/backend),
+      # so the smoke tests can run for real in CI: start the mock server,
+      # wait for it to accept connections, run the login/agent smoke tests
+      # against it (default APP_ENV=development already points at
+      # http://localhost:4000 - see config/environments/development.env),
+      # then always tear the server down.
+      - name: Start mock server
+        run: |
+          node mock-server/server.js > mock-server.log 2>&1 &
+          echo $! > mock-server.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4000/api/agents/getAllAgents > /dev/null; then
+              echo "Mock server is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Mock server did not become ready in time" >&2
+          cat mock-server.log >&2
+          exit 1
+
+      - name: Run smoke tests against mock server
+        run: npm test
+
+      - name: Show mock server log
+        if: always()
+        run: cat mock-server.log || true
+
+      - name: Stop mock server
+        if: always()
+        run: |
+          if [ -f mock-server.pid ]; then
+            kill "$(cat mock-server.pid)" 2>/dev/null || true
+          fi
